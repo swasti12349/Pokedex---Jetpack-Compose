@@ -50,13 +50,21 @@ import com.sro.jcapp.R
 import com.sro.jcapp.data.remote.responses.Result
 import com.sro.jcapp.ui.theme.RobotoCondensed
 
+
 @Composable
 fun PokemonListScreen(navController: NavController) {
     val viewModel: PokemonListViewModel = hiltViewModel()
     val pokemonFetchList = viewModel.pager.collectAsLazyPagingItems()
+    val filteredList = pokemonFetchList.itemSnapshotList.items.toList()
+
+    var searchQuery by remember { mutableStateOf("") }
+    val filteredPokemonList = if (searchQuery.isEmpty()) {
+        filteredList
+    } else {
+        filteredList.filter { it.name.contains(searchQuery, ignoreCase = true) }
+    }
 
     Surface(color = MaterialTheme.colors.background, modifier = Modifier.fillMaxSize()) {
-
         Column(modifier = Modifier.fillMaxSize()) {
             Spacer(
                 modifier = Modifier
@@ -72,62 +80,26 @@ fun PokemonListScreen(navController: NavController) {
                     .align(Alignment.CenterHorizontally)
             )
             Spacer(modifier = Modifier.height(16.dp))
+
             SearchBar(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp), hint = "Search Pokemon"
+                    .padding(16.dp),
+                hint = "Search Pokemon"
             ) { query ->
-                viewModel.searchQuery.value = query
-
+                searchQuery = query
             }
+
             PokedexEntryGridView(
-                navController, pokemonFetchList
-            )
-
-        }
-    }
-}
-
-
-@Composable
-fun SearchBar(
-    modifier: Modifier = Modifier, hint: String = "", onSearch: (String) -> Unit = {}
-) {
-
-    var text by remember {
-        mutableStateOf("")
-    }
-
-    var isHintDisplayed by remember { mutableStateOf(hint != "") }
-
-    Box(modifier = modifier) {
-        BasicTextField(value = text,
-            onValueChange = {
-                text = it
-                onSearch(it)
-            },
-            maxLines = 1,
-            singleLine = true,
-            textStyle = TextStyle(color = Color.Black),
-            modifier = Modifier
-                .fillMaxWidth()
-                .shadow(5.dp, CircleShape)
-                .background(Color.White, CircleShape)
-                .padding(horizontal = 10.dp, vertical = 12.dp)
-                .onFocusChanged {
-                    isHintDisplayed = !it.isFocused
-
-                })
-
-        if (isHintDisplayed) {
-            Text(
-                text = hint,
-                color = Color.LightGray,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+                navController = navController,
+                pokemonFetchList = pokemonFetchList,
+                pokemonFilteredList = filteredPokemonList,
+                isSearching = searchQuery.isNotEmpty()
             )
         }
     }
 }
+
 
 @Composable
 fun PokemonListEntry(
@@ -182,54 +154,99 @@ fun PokemonListEntry(
 
 }
 
+
+
+
 @Composable
 fun PokedexEntryGridView(
     navController: NavController,
-    pokemonFetchList: LazyPagingItems<Result>
-
-    ) {
-
-
+    pokemonFetchList: LazyPagingItems<Result>,
+    pokemonFilteredList: List<Result>,
+    isSearching: Boolean
+) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         modifier = Modifier.padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        items(pokemonFetchList.itemCount) { index ->
-            val entry = pokemonFetchList[index]
-            if (entry != null) {
+        if (isSearching) {
+            items(pokemonFilteredList.size) { index ->
+                val entry = pokemonFilteredList[index]
                 PokemonListEntry(navController = navController, entry = entry)
             }
-        }
-
-        pokemonFetchList.apply {
-            when (loadState.append) {
-                is LoadState.Loading -> {
-                    item {
-                        // Loading indicator for pagination
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp)
-                        )
-                    }
+        } else {
+            items(pokemonFetchList.itemCount) { index ->
+                val entry = pokemonFetchList[index]
+                if (entry != null) {
+                    PokemonListEntry(navController = navController, entry = entry)
                 }
-
-                is LoadState.Error -> {
-                    item {
-                        Text(
-                            text = "Failed to load more items",
-                            color = Color.Red,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp)
-                        )
-                    }
-                }
-
-                is LoadState.NotLoading -> {}
             }
+
+            pokemonFetchList.apply {
+                when (loadState.append) {
+                    is LoadState.Loading -> {
+                        item {
+                            CircularProgressIndicator(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp)
+                            )
+                        }
+                    }
+
+                    is LoadState.Error -> {
+                        item {
+                            Text(
+                                text = "Failed to load more items",
+                                color = Color.Red,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp)
+                            )
+                        }
+                    }
+
+                    is LoadState.NotLoading -> {}
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SearchBar(
+    modifier: Modifier = Modifier,
+    hint: String = "",
+    onSearch: (String) -> Unit = {}
+) {
+    var text by remember { mutableStateOf("") }
+    var isHintDisplayed by remember { mutableStateOf(hint.isNotEmpty()) }
+
+    Box(modifier = modifier) {
+        BasicTextField(
+            value = text,
+            onValueChange = {
+                text = it
+                onSearch(it)
+            },
+            maxLines = 1,
+            singleLine = true,
+            textStyle = TextStyle(color = Color.Black),
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(5.dp, CircleShape)
+                .background(Color.White, CircleShape)
+                .padding(horizontal = 10.dp, vertical = 12.dp)
+                .onFocusChanged { isHintDisplayed = it.isFocused.not() }
+        )
+
+        if (isHintDisplayed && text.isEmpty()) {
+            Text(
+                text = hint,
+                color = Color.LightGray,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+            )
         }
     }
 }
